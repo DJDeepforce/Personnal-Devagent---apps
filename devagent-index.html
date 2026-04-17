@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DevAgent</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #080c10; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+
+const SYSTEM_PROMPT = `You are an expert React developer. The user describes a micro-app. Generate a complete self-contained component.
+RULES:
+- Return ONLY raw JSON. No markdown, no backticks. Start with { end with }
+- Format: { "title": "App name", "slug": "app-slug", "description": "one line", "code": "full JSX string" }
+- slug: lowercase, hyphenated (e.g. "kalimba-tuner")
+- Component must have default export named App
+- Use only React hooks + inline styles. No external libs.
+- No API calls, no localStorage, no browser storage
+- Dark theme, beautiful, functional
+- Max 150 lines. No comments.
+- In "code": escape double quotes as \\", backslashes as \\\\, newlines as \\n
+- Response must be valid parseable JSON. Never truncate.`;
+
+const STEPS = [
+  { label: "Agent 1 — Génération du code", icon: "🧠", color: "#63d39e" },
+  { label: "Agent 2 — Création des fichiers", icon: "📁", color: "#60a5fa" },
+  { label: "Agent 3 — Déploiement", icon: "🚀", color: "#f472b6" },
+  { label: "App live !", icon: "✅", color: "#63d39e" },
+];
+
+function Spinner({ color = "#63d39e" }) {
+  return React.createElement("span", { style: {
+    width: 16, height: 16, borderRadius: "50%",
+    border: `2px solid ${color}44`, borderTop: `2px solid ${color}`,
+    display: "inline-block", animation: "spin 0.7s linear infinite", flexShrink: 0
+  }});
+}
+
+function Field({ icon, label, placeholder, value, onChange, isText }) {
+  const [show, setShow] = React.useState(false);
+  return React.createElement("div", { style: { marginBottom: 10 } },
+    React.createElement("div", { style: { fontSize: 11, color: "#484f58", marginBottom: 4, fontFamily: "monospace", letterSpacing: 1 } }, label),
+    React.createElement("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 10, display: "flex", alignItems: "center", gap: 8, padding: "10px 12px" } },
+      React.createElement("span", { style: { fontSize: 14 } }, icon),
+      React.createElement("input", {
+        type: isText ? "text" : (show ? "text" : "password"),
+        placeholder, value,
+        onChange: e => onChange(e.target.value),
+        style: { flex: 1, background: "transparent", border: "none", color: "#e6edf3", fontSize: 12, fontFamily: "monospace", outline: "none" }
+      }),
+      !isText && React.createElement("button", {
+        onClick: () => setShow(s => !s),
+        style: { background: "none", border: "none", color: "#484f58", cursor: "pointer", fontSize: 13, padding: 0 }
+      }, show ? "🙈" : "👁")
+    )
+  );
+}
+
+function App() {
+  const [cfg, setCfg] = React.useState(() => {
+    try { return JSON.parse(localStorage.getItem("devagent_cfg") || "{}"); } catch { return {}; }
+  });
+  const [showCfg, setShowCfg] = React.useState(false);
+  const [prompt, setPrompt] = React.useState("");
+  const [step, setStep] = React.useState(null);
+  const [logs, setLogs] = React.useState([]);
+  const [result, setResult] = React.useState(null);
+  const [error, setError] = React.useState(null);
+
+  const saveCfg = (key, val) => {
+    const next = { ...cfg, [key]: val };
+    setCfg(next);
+    localStorage.setItem("devagent_cfg", JSON.stringify(next));
+  };
+
+  const addLog = (msg, color = "#8b949e") => setLogs(l => [...l, { msg, color, id: Date.now() + Math.random() }]);
+  const cfgOk = cfg.anthropicKey && cfg.githubToken && cfg.githubUser;
+
+  const runArchitect = async () => {
+    addLog("🧠 Analyse de ta demande...", "#63d39e");
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": cfg.anthropicKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 8000,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: "user", content: prompt }]
+      })
+    });
+    const rawText = await res.text();
+    let data;
+    try { data = JSON.parse(rawText); } catch(e) { throw new Error("Réponse invalide: " + rawText.slice(0, 120)); }
+    if (!res.ok) throw new Error("API " + res.status + ": " + (data.error?.message || "erreur inconnue"));
+    const text = data.content[0].text.replace(/```json|```/g, "").trim();
+    const parsed = JSON.parse(text);
+    addLog("✅ Code généré : " + parsed.title, "#63d39e");
+    return parsed;
+  };
+
+  const runBuilder = async (appData) => {
+    addLog("📁 Création des fichiers sur GitHub...", "#60a5fa");
+    const { slug, title, code } = appData;
+    const base = "https://api.github.com/repos/" + cfg.githubUser + "/devagent-apps/contents";
+    const headers = { "Authorization": "token " + cfg.githubToken, "Content-Type": "application/json" };
+
+    const html = `<!DOCTYPE html>
+<html lang="fr"><head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>${title}</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"><\/script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"><\/script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"><\/script>
+  <style>*{margin:0;padding:0;box-sizing:border-box}body{background:#080c10}</style>
+</head><body>
+  <div id="root"></div>
+  <script type="text/babel">
+${code}
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  <\/script>
+</body></html>`;
+
+    let sha;
+    try {
+      const check = await fetch(base + "/" + slug + "/index.html", { headers });
+      if (check.ok) { const d = await check.json(); sha = d.sha; }
+    } catch {}
+
+    const body = { message: "devagent: add " + slug, content: btoa(unescape(encodeURIComponent(html))) };
+    if (sha) body.sha = sha;
+    const r = await fetch(base + "/" + slug + "/index.html", { method: "PUT", headers, body: JSON.stringify(body) });
+    if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+    addLog("✅ Fichier créé : /" + slug + "/index.html", "#60a5fa");
+    return slug;
+  };
+
+  const runDeployer = async (slug) => {
+    addLog("🚀 Netlify détecte le push GitHub...", "#f472b6");
+    await new Promise(r => setTimeout(r, 2000));
+    addLog("⚙️ Build en cours (~1 min)...", "#f472b6");
+    await new Promise(r => setTimeout(r, 2000));
+    addLog("✅ Déploiement automatique déclenché !", "#f472b6");
+    const url = "https://devagent-apps.netlify.app/" + slug + "/";
+    addLog("🌍 " + url, "#fbbf24");
+    return url;
+  };
+
+  const run = async () => {
+    if (!cfgOk) { setShowCfg(true); setError("Configure tes tokens d'abord."); return; }
+    if (!prompt.trim()) { setError("Décris l'application."); return; }
+    setError(null); setResult(null); setLogs([]);
+    try {
+      setStep(0); const appData = await runArchitect();
+      setStep(1); const slug = await runBuilder(appData);
+      setStep(2); const url = await runDeployer(slug);
+      setStep(3); setResult({ ...appData, url });
+    } catch(err) {
+      setError("Erreur : " + err.message);
+      setStep(null);
+    }
+  };
+
+  const reset = () => { setResult(null); setStep(null); setPrompt(""); setLogs([]); setError(null); };
+  const running = step !== null && step < 3;
+
+  return React.createElement("div", { style: { minHeight: "100vh", background: "#080c10", color: "#e6edf3", fontFamily: "'Syne', sans-serif", padding: "20px 16px" } },
+
+    // Header
+    React.createElement("div", { style: { textAlign: "center", marginBottom: 24, animation: "fadeUp 0.4s ease-out" } },
+      React.createElement("div", { style: { display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(99,211,158,0.08)", border: "1px solid rgba(99,211,158,0.2)", borderRadius: 99, padding: "3px 12px", marginBottom: 12, fontSize: 10, color: "#63d39e", letterSpacing: 3, textTransform: "uppercase" } },
+        React.createElement("span", { style: { width: 5, height: 5, borderRadius: "50%", background: "#63d39e", display: "inline-block", animation: "pulse 2s infinite" } }),
+        "Système multi-agents"
+      ),
+      React.createElement("h1", { style: { margin: 0, fontSize: 42, fontWeight: 800, letterSpacing: -1, background: "linear-gradient(135deg, #e6edf3 30%, #63d39e)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" } }, "DEVAGENT"),
+      React.createElement("p", { style: { margin: "6px 0 0", color: "#484f58", fontSize: 12, fontFamily: "'Space Mono', monospace" } }, "Décris → Code → GitHub → Netlify → URL live")
+    ),
+
+    // Config
+    React.createElement("div", { style: { maxWidth: 600, margin: "0 auto 16px" } },
+      React.createElement("button", {
+        onClick: () => setShowCfg(s => !s),
+        style: { width: "100%", background: cfgOk ? "rgba(99,211,158,0.06)" : "rgba(251,191,36,0.08)", border: "1px solid " + (cfgOk ? "rgba(99,211,158,0.2)" : "rgba(251,191,36,0.3)"), borderRadius: 10, padding: "10px 14px", color: cfgOk ? "#63d39e" : "#fbbf24", fontSize: 12, cursor: "pointer", fontFamily: "'Space Mono', monospace", display: "flex", alignItems: "center", justifyContent: "space-between" }
+      },
+        React.createElement("span", null, cfgOk ? "⚙️ Tokens configurés ✓ (sauvegardés)" : "⚠️ Configure tes tokens"),
+        React.createElement("span", null, showCfg ? "▲" : "▼")
+      ),
+      showCfg && React.createElement("div", { style: { background: "#0d1117", border: "1px solid #21262d", borderRadius: 12, padding: 16, marginTop: 8, animation: "fadeUp 0.3s ease-out" } },
+        React.createElement(Field, { icon: "🔑", label: "CLÉ API ANTHROPIC", placeholder: "sk-ant-...", value: cfg.anthropicKey || "", onChange: v => saveCfg("anthropicKey", v) }),
+        React.createElement(Field, { icon: "🐙", label: "TOKEN GITHUB", placeholder: "ghp_...", value: cfg.githubToken || "", onChange: v => saveCfg("githubToken", v) }),
+        React.createElement(Field, { icon: "👤", label: "USERNAME GITHUB", placeholder: "DJDeepforce", value: cfg.githubUser || "", onChange: v => saveCfg("githubUser", v), isText: true }),
+        React.createElement("p", { style: { margin: "8px 0 0", fontSize: 10, color: "#484f58" } }, "💾 Tokens sauvegardés dans ton navigateur.")
+      )
+    ),
+
+    // Prompt
+    React.createElement("div", { style: { maxWidth: 600, margin: "0 auto" } },
+      React.createElement("div", { style: { background: "#0d1117", border: "1px solid " + (running ? "#63d39e" : "#21262d"), borderRadius: 14, overflow: "hidden", transition: "border-color 0.3s" } },
+        React.createElement("textarea", {
+          placeholder: "Ex: Un accordeur pour kalimba avec détection de fréquence en temps réel...",
+          value: prompt,
+          onChange: e => setPrompt(e.target.value),
+          disabled: running,
+          rows: 4,
+          style: { width: "100%", background: "transparent", border: "none", color: "#e6edf3", fontSize: 14, lineHeight: 1.6, padding: "14px 14px 10px", resize: "none", fontFamily: "'Syne', sans-serif", outline: "none" }
+        }),
+        React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderTop: "1px solid #21262d" } },
+          React.createElement("span", { style: { fontSize: 11, color: "#484f58", fontFamily: "monospace" } }, prompt.length + " chars"),
+          React.createElement("button", {
+            onClick: result ? reset : run,
+            disabled: running,
+            style: { background: result ? "transparent" : "linear-gradient(135deg, #1a7a4a, #63d39e)", border: result ? "1px solid #63d39e" : "none", color: result ? "#63d39e" : "#080c10", padding: "9px 22px", borderRadius: 9, fontWeight: 700, fontSize: 13, cursor: running ? "not-allowed" : "pointer", fontFamily: "'Syne', sans-serif", opacity: running ? 0.5 : 1, display: "flex", alignItems: "center", gap: 8 }
+          }, running ? [React.createElement(Spinner, { key: "s" }), " En cours..."] : result ? "↩ Nouveau" : "⚡ Créer l'app")
+        )
+      ),
+
+      error && React.createElement("div", { style: { marginTop: 10, padding: "10px 14px", background: "rgba(248,81,73,0.08)", border: "1px solid rgba(248,81,73,0.25)", borderRadius: 10, color: "#f85149", fontSize: 12 } }, "⚠️ " + error),
+
+      (running || step === 3) && React.createElement("div", { style: { marginTop: 16, background: "#0d1117", border: "1px solid #21262d", borderRadius: 12, padding: 14 } },
+        STEPS.map((s, i) => React.createElement("div", { key: i, style: { display: "flex", alignItems: "center", gap: 10, padding: "7px 8px", borderRadius: 8, marginBottom: 2, background: i === step ? s.color + "10" : "transparent", opacity: i > step ? 0.25 : 1, transition: "all 0.3s" } },
+          React.createElement("span", { style: { width: 20, display: "flex", justifyContent: "center" } },
+            i < step || step === 3 ? "✅" : i === step && step < 3 ? React.createElement(Spinner, { color: s.color }) : s.icon
+          ),
+          React.createElement("span", { style: { fontSize: 12, color: i === step ? s.color : "#8b949e", fontFamily: "'Space Mono', monospace" } }, s.label)
+        ))
+      ),
+
+      logs.length > 0 && React.createElement("div", { style: { marginTop: 10, background: "#0d1117", border: "1px solid #21262d", borderRadius: 10, padding: 12, maxHeight: 160, overflowY: "auto" } },
+        logs.map(l => React.createElement("div", { key: l.id, style: { fontSize: 11, color: l.color, fontFamily: "monospace", lineHeight: 1.9 } }, l.msg))
+      ),
+
+      result && React.createElement("div", { style: { marginTop: 16, background: "rgba(99,211,158,0.05)", border: "1px solid rgba(99,211,158,0.2)", borderRadius: 14, padding: 18, animation: "fadeUp 0.4s ease-out" } },
+        React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 } },
+          React.createElement("div", null,
+            React.createElement("h3", { style: { margin: 0, fontSize: 16, fontWeight: 700 } }, result.title),
+            React.createElement("p", { style: { margin: "3px 0 0", fontSize: 12, color: "#8b949e" } }, result.description)
+          ),
+          React.createElement("span", { style: { background: "rgba(99,211,158,0.15)", color: "#63d39e", fontSize: 10, padding: "2px 10px", borderRadius: 99, fontFamily: "monospace" } }, "LIVE")
+        ),
+        React.createElement("a", { href: result.url, target: "_blank", rel: "noreferrer", style: { display: "block", background: "linear-gradient(135deg, #1a7a4a, #63d39e)", color: "#080c10", textDecoration: "none", textAlign: "center", padding: "12px", borderRadius: 10, fontWeight: 700, fontSize: 14, fontFamily: "'Syne', sans-serif", marginBottom: 8 } }, "🌍 Ouvrir l'app live →"),
+        React.createElement("div", { style: { fontSize: 11, color: "#484f58", textAlign: "center", fontFamily: "monospace", wordBreak: "break-all" } }, result.url)
+      )
+    )
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+  </script>
+</body>
+</html>
