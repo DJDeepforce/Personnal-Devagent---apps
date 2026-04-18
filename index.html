@@ -21,18 +21,21 @@
   <div id="root"></div>
   <script type="text/babel">
 
-const SYSTEM_PROMPT = `You are an expert React developer. The user describes a micro-app. Generate a complete self-contained component.
-RULES:
-- Return ONLY raw JSON. No markdown, no backticks. Start with { end with }
-- Format: { "title": "App name", "slug": "app-slug", "description": "one line", "code": "full JSX string" }
-- slug: lowercase, hyphenated (e.g. "kalimba-tuner")
-- Component must have default export named App
-- Use only React hooks + inline styles. No external libs.
-- No API calls, no localStorage, no browser storage
-- Dark theme, beautiful, functional
-- Max 150 lines. No comments.
-- In "code": escape double quotes as \\", backslashes as \\\\, newlines as \\n
-- Response must be valid parseable JSON. Never truncate.`;
+const SYSTEM_PROMPT = `You generate micro-apps as JSON. Return ONLY raw JSON, nothing else.
+
+Format: { "title": "Name", "slug": "name-slug", "description": "one line", "code": "JSX string" }
+
+CRITICAL CODE RULES - code runs inside a <script type="text/babel"> in a plain HTML page:
+- NEVER use import or export statements
+- Use React.useState, React.useEffect, React.useRef, React.useCallback directly (no destructuring)
+- Always define exactly: function App() { ... } with no export
+- Use only inline styles (JS objects), no CSS classes, no Tailwind
+- Dark theme, beautiful UI, fully functional
+- Under 120 lines
+- For audio: use Web Audio API with React.useRef
+- For timers: use setInterval inside React.useEffect
+
+JSON "code" field rules: escape " as \" and newlines as \n. Full response must be valid JSON.`;
 
 const STEPS = [
   { label: "Agent 1 — Génération du code", icon: "🧠", color: "#63d39e" },
@@ -111,14 +114,21 @@ function App() {
     try { data = JSON.parse(rawText); } catch(e) { throw new Error("Réponse invalide: " + rawText.slice(0, 120)); }
     if (!res.ok) throw new Error("API " + res.status + ": " + (data.error?.message || "erreur inconnue"));
     const text = data.content[0].text.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(text);
+    // Extract JSON more robustly
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("Pas de JSON valide dans la réponse");
+    let parsed;
+    try { parsed = JSON.parse(jsonMatch[0]); } catch(e) { throw new Error("JSON invalide: " + e.message); }
+    if (!parsed.title || !parsed.slug || !parsed.code) throw new Error("Réponse incomplète du modèle");
     addLog("✅ Code généré : " + parsed.title, "#63d39e");
     return parsed;
   };
 
   const runBuilder = async (appData) => {
     addLog("📁 Création des fichiers sur GitHub...", "#60a5fa");
-    const { slug, title, code } = appData;
+    const { title, code } = appData;
+    // Sanitize slug: lowercase, only alphanumeric and hyphens
+    const slug = appData.slug.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "").slice(0, 50);
     const base = "https://api.github.com/repos/" + cfg.githubUser + "/Personnal-Devagent---apps/contents";
     const headers = { "Authorization": "token " + cfg.githubToken, "Content-Type": "application/json" };
 
