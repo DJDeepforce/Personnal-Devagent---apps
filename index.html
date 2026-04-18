@@ -134,8 +134,8 @@ function App() {
 </head><body>
   <div id="root"></div>
   <script type="text/babel">
-${code}
-ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+${code.replace(/export\s+default\s+function\s+App/, 'function App').replace(/export\s+default\s+App/, '')}
+try { ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App)); } catch(e) { document.getElementById("root").innerHTML = "<div style=color:red;padding:20px>Erreur: " + e.message + "</div>"; }
   <\/script>
 </body></html>`;
 
