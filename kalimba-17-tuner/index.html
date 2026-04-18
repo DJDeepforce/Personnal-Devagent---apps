@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Kalimba 17 Tuner</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>*{margin:0;padding:0;box-sizing:border-box}body{background:#080c10}</style>
+</head><body>
+  <div id="root"></div>
+  <script type="text/babel">
+function App() {
+  const [listening, setListening] = React.useState(false);
+  const [note, setNote] = React.useState(null);
+  const [cents, setCents] = React.useState(0);
+  const [freq, setFreq] = React.useState(null);
+  const audioCtx = React.useRef(null);
+  const analyser = React.useRef(null);
+  const stream = React.useRef(null);
+  const raf = React.useRef(null);
+
+  const notes17 = [
+    {note:'D4',freq:293.66},{note:'E4',freq:329.63},{note:'F#4',freq:369.99},
+    {note:'G4',freq:392.00},{note:'A4',freq:440.00},{note:'B4',freq:493.88},
+    {note:'C5',freq:523.25},{note:'D5',freq:587.33},{note:'E5',freq:659.25},
+    {note:'F#5',freq:739.99},{note:'G5',freq:783.99},{note:'A5',freq:880.00},
+    {note:'B5',freq:987.77},{note:'C6',freq:1046.50},{note:'D6',freq:1174.66},
+    {note:'E6',freq:1318.51},{note:'F#6',freq:1479.98}
+  ];
+
+  function autoCorrelate(buf, sampleRate) {
+    const SIZE = buf.length;
+    let rms = 0;
+    for (let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
+    rms = Math.sqrt(rms / SIZE);
+    if (rms < 0.01) return -1;
+    let r1=0,r2=SIZE-1;
+    for (let i=0;i<SIZE/2;i++) if(Math.abs(buf[i])<0.2){r1=i;break;}
+    for (let i=1;i<SIZE/2;i++) if(Math.abs(buf[SIZE-i])<0.2){r2=SIZE-i;break;}
+    const buf2 = buf.slice(r1,r2);
+    const c = new Float32Array(buf2.length);
+    for (let i=0;i<buf2.length;i++) for(let j=0;j<buf2.length-i;j++) c[i]+=buf2[j]*buf2[j+i];
+    let d=0; while(c[d]>c[d+1]) d++;
+    let maxVal=-1,maxPos=-1;
+    for(let i=d;i<buf2.length;i++) if(c[i]>maxVal){maxVal=c[i];maxPos=i;}
+    let T0=maxPos;
+    const x1=c[T0-1],x2=c[T0],x3=c[T0+1];
+    T0=T0+(x3-x1)/(2*(2*x2-x1-x3));
+    return sampleRate/T0;
+  }
+
+  function getNearestNote(f) {
+    let best=notes17[0],minD=Infinity;
+    notes17.forEach(n=>{ const d=Math.abs(n.freq-f); if(d<minD){minD=d;best=n;} });
+    const c=1200*Math.log2(f/best.freq);
+    return {note:best.note,cents:Math.round(c)};
+  }
+
+  function detect() {
+    const buf = new Float32Array(analyser.current.fftSize);
+    analyser.current.getFloatTimeDomainData(buf);
+    const f = autoCorrelate(buf, audioCtx.current.sampleRate);
+    if (f > 200 && f < 1600) {
+      setFreq(f.toFixed(1));
+      const r = getNearestNote(f);
+      setNote(r.note);
+      setCents(r.cents);
+    }
+    raf.current = requestAnimationFrame(detect);
+  }
+
+  async function start() {
+    audioCtx.current = new (window.AudioContext||window.webkitAudioContext)();
+    analyser.current = audioCtx.current.createAnalyser();
+    analyser.current.fftSize = 2048;
+    stream.current = await navigator.mediaDevices.getUserMedia({audio:true});
+    audioCtx.current.createMediaStreamSource(stream.current).connect(analyser.current);
+    setListening(true);
+    detect();
+  }
+
+  function stop() {
+    cancelAnimationFrame(raf.current);
+    stream.current && stream.current.getTracks().forEach(t=>t.stop());
+    audioCtx.current && audioCtx.current.close();
+    setListening(false); setNote(null); setCents(0); setFreq(null);
+  }
+
+  const needle = Math.max(-50,Math.min(50,cents||0));
+  const tuneColor = Math.abs(needle)<5?'#00e676':Math.abs(needle)<15?'#ffeb3b':'#f44336';
+
+  return (
+    <div style={{minHeight:'100vh',background:'#0d0d1a',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',fontFamily:'Arial',color:'#fff',padding:'20px'}}>
+      <h1 style={{fontSize:28,marginBottom:4,color:'#a78bfa',letterSpacing:2}}>🎵 KALIMBA TUNER</h1>
+      <p style={{color:'#666',marginBottom:24,fontSize:13}}>17 Keys — Key of C Major</p>
+      <div style={{background:'#1a1a2e',borderRadius:16,padding:'30px 40px',width:320,boxShadow:'0 0 40px #7c3aed44',textAlign:'center'}}>
+        <div style={{fontSize:64,fontWeight:'bold',color:tuneColor,minHeight:80,letterSpacing:3}}>{note||'—'}</div>
+        <div style={{color:'#888',fontSize:13,marginBottom:20}}>{freq?`${freq} Hz`:' '}</div>
+        <div style={{position:'relative',height:14,background:'#111',borderRadius:8,margin:'0 0 8px',overflow:'hidden'}}>
+          <div style={{position:'absolute',left:'50%',top:0,width:2,height:'100%',background:'#444'}}></div>
+          <div style={{position:'absolute',left:`calc(50% + ${needle*2.4}px)`,top:'50%',transform:'translate(-50%,-50%)',width:16,height:16,borderRadius:'50%',background:tuneColor,boxShadow:`0 0 10px ${tuneColor}`,transition:'left 0.15s'}}></div>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#555',marginBottom:20}}><span>-50</span><span style={{color:tuneColor,fontWeight:'bold'}}>{cents!==null&&note?`${cents>0?'+':''}${cents}¢`:''}</span><span>+50</span></div>
+        <button onClick={listening?stop:start} style={{background:listening?'#7f1d1d':'#4c1d95',color:'#fff',border:'none',borderRadius:10,padding:'12px 40px',fontSize:15,cursor:'pointer',fontWeight:'bold',letterSpacing:1,boxShadow:`0 0 20px ${listening?'#f4433644':'#7c3aed44'}`}}>
+          {listening?'⏹ STOP':'🎤 START'}
+        </button>
+      </div>
+      <div style={{marginTop:24,display:'flex',flexWrap:'wrap',justifyContent:'center',gap:6,maxWidth:400}}>
+        {notes17.map((n,i)=>(<div key={i} style={{background:note===n.note?tuneColor:'#1a1a2e',color:note===n.note?'#000':'#aaa',borderRadius:8,padding:'5px 10px',fontSize:12,border:`1px solid ${note===n.note?tuneColor:'#333'}`,fontWeight:note===n.note?'bold':'normal',transition:'all 0.2s'}}>{n.note}</div>))}
+      </div>
+    </div>
+  );
+}
+try { ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App)); } catch(e) { document.getElementById("root").innerHTML = "<div style=color:red;padding:20px>Erreur: " + e.message + "</div>"; }
+  </script>
+</body></html>
