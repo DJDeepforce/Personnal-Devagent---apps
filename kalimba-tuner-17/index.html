@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Kalimba Tuner 17</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>*{margin:0;padding:0;box-sizing:border-box}body{background:#080c10}</style>
+</head><body>
+  <div id="root"></div>
+  <script type="text/babel">
+function App() {
+  const [note, setNote] = React.useState(null);
+  const [target, setTarget] = React.useState(null);
+  const [cents, setCents] = React.useState(0);
+  const [active, setActive] = React.useState(false);
+  const [volume, setVolume] = React.useState(0);
+  const audioCtx = React.useRef(null);
+  const analyser = React.useRef(null);
+  const rafId = React.useRef(null);
+  const streamRef = React.useRef(null);
+
+  const NOTES = [
+    {name:'C4',freq:261.63},{name:'D4',freq:293.66},{name:'E4',freq:329.63},
+    {name:'F4',freq:349.23},{name:'G4',freq:392.00},{name:'A4',freq:440.00},
+    {name:'B4',freq:493.88},{name:'C5',freq:523.25},{name:'D5',freq:587.33},
+    {name:'E5',freq:659.25},{name:'F5',freq:698.46},{name:'G5',freq:783.99},
+    {name:'A5',freq:880.00},{name:'B5',freq:987.77},{name:'C6',freq:1046.50},
+    {name:'D6',freq:1174.66},{name:'E6',freq:1318.51}
+  ];
+
+  function autoCorrelate(buf, sampleRate) {
+    let SIZE = buf.length, rms = 0;
+    for (let i = 0; i < SIZE; i++) rms += buf[i]*buf[i];
+    rms = Math.sqrt(rms/SIZE);
+    if (rms < 0.01) return -1;
+    let r1=0,r2=SIZE-1;
+    for (let i=0;i<SIZE/2;i++) if(Math.abs(buf[i])<0.2){r1=i;break;}
+    for (let i=1;i<SIZE/2;i++) if(Math.abs(buf[SIZE-i])<0.2){r2=SIZE-i;break;}
+    buf = buf.slice(r1,r2);
+    SIZE = buf.length;
+    let c = new Array(SIZE).fill(0);
+    for (let i=0;i<SIZE;i++) for (let j=0;j<SIZE-i;j++) c[i]+=buf[j]*buf[j+i];
+    let d=0; while(c[d]>c[d+1]) d++;
+    let maxval=-1,maxpos=-1;
+    for (let i=d;i<SIZE;i++) if(c[i]>maxval){maxval=c[i];maxpos=i;}
+    let T0=maxpos;
+    let x1=c[T0-1],x2=c[T0],x3=c[T0+1];
+    let a=(x1+x3-2*x2)/2, b=(x3-x1)/2;
+    if(a) T0=T0-b/(2*a);
+    return sampleRate/T0;
+  }
+
+  function freqToCents(f, target) {
+    return 1200 * Math.log2(f / target);
+  }
+
+  function closestNote(freq) {
+    let best = null, bestDiff = Infinity;
+    NOTES.forEach(n => {
+      const d = Math.abs(freqToCents(freq, n.freq));
+      if (d < bestDiff) { bestDiff = d; best = n; }
+    });
+    return best;
+  }
+
+  function detect() {
+    if (!analyser.current) return;
+    const buf = new Float32Array(analyser.current.fftSize);
+    analyser.current.getFloatTimeDomainData(buf);
+    let rms = 0; for (let i=0;i<buf.length;i++) rms += buf[i]*buf[i];
+    rms = Math.sqrt(rms/buf.length);
+    setVolume(Math.min(rms*10,1));
+    const freq = autoCorrelate(buf, audioCtx.current.sampleRate);
+    if (freq > 200 && freq < 1500) {
+      const t = closestNote(freq);
+      const c = freqToCents(freq, t.freq);
+      setNote(freq.toFixed(1));
+      setTarget(t);
+      setCents(Math.max(-50, Math.min(50, c)));
+    }
+    rafId.current = requestAnimationFrame(detect);
+  }
+
+  async function start() {
+    audioCtx.current = new (window.AudioContext || window.webkitAudioContext)();
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    streamRef.current = stream;
+    const src = audioCtx.current.createMediaStreamSource(stream);
+    analyser.current = audioCtx.current.createAnalyser();
+    analyser.current.fftSize = 2048;
+    src.connect(analyser.current);
+    setActive(true);
+    detect();
+  }
+
+  function stop() {
+    cancelAnimationFrame(rafId.current);
+    if (streamRef.current) streamRef.current.getTracks().forEach(t=>t.stop());
+    if (audioCtx.current) audioCtx.current.close();
+    setActive(false); setNote(null); setTarget(null); setCents(0); setVolume(0);
+  }
+
+  const gaugeColor = Math.abs(cents) < 5 ? '#00e676' : Math.abs(cents) < 15 ? '#ffeb3b' : '#f44336';
+  const needlePos = 50 + (cents / 50) * 50;
+  const status = Math.abs(cents) < 5 ? '✓ JUSTE' : cents > 0 ? '▲ TROP HAUT' : '▼ TROP BAS';
+
+  return (
+    <div style={{minHeight:'100vh',background:'#0d0d1a',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',fontFamily:'monospace',color:'#eee',padding:'20px'}}>
+      <h1 style={{fontSize:'1.8rem',color:'#b39ddb',marginBottom:'4px',letterSpacing:'3px'}}>🎵 KALIMBA TUNER</h1>
+      <p style={{color:'#555',marginBottom:'24px',fontSize:'0.85rem'}}>17 tines · C4 – E6</p>
+
+      <div style={{background:'#1a1a2e',borderRadius:'16px',padding:'28px',width:'320px',boxShadow:'0 0 40px #7e57c233'}}>
+        <div style={{textAlign:'center',marginBottom:'20px'}}>
+          <div style={{fontSize:'3.5rem',fontWeight:'bold',color:gaugeColor,lineHeight:1}}>{target ? target.name : '---'}</div>
+          <div style={{color:'#888',fontSize:'0.8rem',marginTop:'4px'}}>{note ? `${note} Hz` : 'En attente...'}</div>
+        </div>
+
+        <div style={{position:'relative',height:'40px',background:'#111',borderRadius:'20px',overflow:'hidden',marginBottom:'12px'}}>
+          <div style={{position:'absolute',left:'50%',top:0,bottom:0,width:'2px',background:'#333',transform:'translateX(-50%)'}} />
+          {active && target && <div style={{position:'absolute',left:`${needlePos}%`,top:'50%',transform:'translate(-50%,-50%)',width:'14px',height:'14px',borderRadius:'50%',background:gaugeColor,boxShadow:`0 0 12px ${gaugeColor}`,transition:'left 0.1s'}} />}
+          <div style={{position:'absolute',left:'8px',top:'50%',transform:'translateY(-50%)',fontSize:'0.65rem',color:'#555'}}>♭</div>
+          <div style={{position:'absolute',right:'8px',top:'50%',transform:'translateY(-50%)',fontSize:'0.65rem',color:'#555'}}>♯</div>
+        </div>
+
+        <div style={{textAlign:'center',fontSize:'1rem',fontWeight:'bold',color:gaugeColor,marginBottom:'20px',height:'24px'}}>
+          {active && target ? status : ''}
+        </div>
+
+        <div style={{marginBottom:'20px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:'0.7rem',color:'#555',marginBottom:'4px'}}><span>Volume</span></div>
+          <div style={{height:'6px',background:'#111',borderRadius:'3px'}}>
+            <div style={{height:'100%',width:`${volume*100}%`,background:'linear-gradient(90deg,#7e57c2,#b39ddb)',borderRadius:'3px',transition:'width 0.1s'}} />
+          </div>
+        </div>
+
+        <button onClick={active ? stop : start} style={{width:'100%',padding:'12px',borderRadius:'10px',border:'none',background:active?'#c62828':'#4527a0',color:'#fff',fontSize:'1rem',cursor:'pointer',fontFamily:'monospace',letterSpacing:'2px',transition:'background 0.2s'}}>
+          {active ? '■ STOP' : '● START'}
+        </button>
+      </div>
+
+      <div style={{display:'flex',flexWrap:'wrap',gap:'6px',maxWidth:'340px',marginTop:'20px',justifyContent:'center'}}>
+        {NOTES.map(n => <div key={n.name} style={{padding:'4px 8px',borderRadius:'6px',fontSize:'0.7rem',background: target&&target.name===n.name ? gaugeColor : '#1a1a2e',color: target&&target.name===n.name ? '#000' : '#555',fontWeight:'bold',transition:'background 0.2s'}}>{n.name}</div>)}
+      </div>
+    </div>
+  );
+}
+try { ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App)); } catch(e) { document.getElementById("root").innerHTML = "<div style=color:red;padding:20px>Erreur: " + e.message + "</div>"; }
+  </script>
+</body></html>
