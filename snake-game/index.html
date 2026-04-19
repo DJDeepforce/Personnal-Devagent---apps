@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Snake Game</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>*{margin:0;padding:0;box-sizing:border-box}body{background:#080c10}</style>
+</head><body>
+  <div id="root"></div>
+  <script type="text/babel">
+import { useState, useEffect, useCallback, useRef } from "react";
+
+const COLS = 20, ROWS = 20, BASE = 150;
+const DIR = { UP: [0,-1], DOWN: [0,1], LEFT: [-1,0], RIGHT: [1,0] };
+
+function rand() { return [Math.floor(Math.random()*COLS), Math.floor(Math.random()*ROWS)]; }
+
+export default function App() {
+  const [snake, setSnake] = useState([[10,10],[9,10],[8,10]]);
+  const [food, setFood] = useState([15,10]);
+  const [dir, setDir] = useState(DIR.RIGHT);
+  const [score, setScore] = useState(0);
+  const [level, setLevel] = useState(1);
+  const [dead, setDead] = useState(false);
+  const [started, setStarted] = useState(false);
+  const nextDir = useRef(DIR.RIGHT);
+  const snakeRef = useRef(snake);
+  snakeRef.current = snake;
+
+  const reset = () => {
+    const s = [[10,10],[9,10],[8,10]];
+    setSnake(s); setFood(rand()); setDir(DIR.RIGHT);
+    nextDir.current = DIR.RIGHT;
+    setScore(0); setLevel(1); setDead(false); setStarted(true);
+  };
+
+  const tick = useCallback(() => {
+    const s = snakeRef.current;
+    const d = nextDir.current;
+    const head = [s[0][0]+d[0], s[0][1]+d[1]];
+    if (head[0]<0||head[0]>=COLS||head[1]<0||head[1]>=ROWS||s.some(p=>p[0]===head[0]&&p[1]===head[1])) {
+      setDead(true); return;
+    }
+    setDir(d);
+    setSnake(prev => {
+      const ate = head[0]===food[0]&&head[1]===food[1];
+      const ns = [head, ...prev];
+      if (!ate) ns.pop();
+      if (ate) {
+        setScore(sc => { const nsc=sc+10; setLevel(Math.floor(nsc/50)+1); return nsc; });
+        setFood(rand());
+      }
+      return ns;
+    });
+  }, [food]);
+
+  useEffect(() => {
+    if (!started || dead) return;
+    const speed = Math.max(60, BASE - (level-1)*15);
+    const id = setInterval(tick, speed);
+    return () => clearInterval(id);
+  }, [started, dead, tick, level]);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)) e.preventDefault();
+      const cur = nextDir.current;
+      if (e.key==="ArrowUp"&&cur!==DIR.DOWN) nextDir.current=DIR.UP;
+      if (e.key==="ArrowDown"&&cur!==DIR.UP) nextDir.current=DIR.DOWN;
+      if (e.key==="ArrowLeft"&&cur!==DIR.RIGHT) nextDir.current=DIR.LEFT;
+      if (e.key==="ArrowRight"&&cur!==DIR.LEFT) nextDir.current=DIR.RIGHT;
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
+
+  const cell = 22;
+  return (
+    <div style={{minHeight:"100vh",background:"#0f0f1a",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"monospace",color:"#eee"}}>
+      <h1 style={{fontSize:28,letterSpacing:4,color:"#7fff7f",margin:"0 0 12px"}}>🐍 SNAKE</h1>
+      <div style={{display:"flex",gap:32,marginBottom:12}}>
+        <span style={{color:"#aaa"}}>Score: <b style={{color:"#7fff7f"}}>{score}</b></span>
+        <span style={{color:"#aaa"}}>Level: <b style={{color:"#ffdd57"}}>{level}</b></span>
+      </div>
+      <div style={{position:"relative",width:COLS*cell,height:ROWS*cell,background:"#111122",border:"2px solid #333",borderRadius:6,overflow:"hidden"}}>
+        {Array.from({length:ROWS},(_,r)=>Array.from({length:COLS},(_,c)=>
+          <div key={`${c}-${r}`} style={{position:"absolute",left:c*cell,top:r*cell,width:cell,height:cell,background:(c+r)%2===0?"#111122":"#131326"}} />
+        ))}
+        {snake.map((p,i)=>(
+          <div key={i} style={{position:"absolute",left:p[0]*cell+1,top:p[1]*cell+1,width:cell-2,height:cell-2,background:i===0?"#7fff7f":"#4caf50",borderRadius:i===0?6:4,boxShadow:i===0?"0 0 8px #7fff7f":"none"}} />
+        ))}
+        <div style={{position:"absolute",left:food[0]*cell+1,top:food[1]*cell+1,width:cell-2,height:cell-2,background:"#ff5252",borderRadius:"50%",boxShadow:"0 0 8px #ff5252"}} />
+        {(!started||dead)&&(
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.75)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
+            {dead&&<div style={{fontSize:28,color:"#ff5252",fontWeight:"bold"}}>GAME OVER</div>}
+            {dead&&<div style={{color:"#aaa"}}>Final Score: <b style={{color:"#7fff7f"}}>{score}</b></div>}
+            <button onClick={reset} style={{padding:"10px 28px",background:"#7fff7f",color:"#111",border:"none",borderRadius:8,fontSize:16,fontWeight:"bold",cursor:"pointer",letterSpacing:2}}>{dead?"RETRY":"START"}</button>
+          </div>
+        )}
+      </div>
+      <p style={{color:"#555",marginTop:12,fontSize:13}}>Use arrow keys to move</p>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  </script>
+</body></html>
