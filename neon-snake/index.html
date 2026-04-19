@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Neon Snake</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>*{margin:0;padding:0;box-sizing:border-box}body{background:#080c10}</style>
+</head><body>
+  <div id="root"></div>
+  <script type="text/babel">
+import { useState, useEffect, useRef, useCallback } from "react";
+
+const CELL = 20;
+const COLS = 25;
+const ROWS = 25;
+const W = COLS * CELL;
+const H = ROWS * CELL;
+
+export default function App() {
+  const canvasRef = useRef(null);
+  const stateRef = useRef({
+    snake: [{x:12,y:12},{x:11,y:12},{x:10,y:12}],
+    dir: {x:1,y:0},
+    nextDir: {x:1,y:0},
+    food: {x:5,y:5},
+    particles: [],
+    score: 0,
+    alive: true,
+    started: false,
+    speed: 150,
+    tick: 0,
+    trail: []
+  });
+  const [display, setDisplay] = useState({score:0, alive:true, started:false});
+  const animRef = useRef(null);
+  const lastTickRef = useRef(0);
+  const touchRef = useRef(null);
+
+  const randFood = (snake) => {
+    let f;
+    do { f = {x:Math.floor(Math.random()*COLS), y:Math.floor(Math.random()*ROWS)}; }
+    while (snake.some(s=>s.x===f.x&&s.y===f.y));
+    return f;
+  };
+
+  const reset = useCallback(() => {
+    const s = stateRef.current;
+    s.snake = [{x:12,y:12},{x:11,y:12},{x:10,y:12}];
+    s.dir = {x:1,y:0}; s.nextDir = {x:1,y:0};
+    s.food = randFood(s.snake);
+    s.particles = []; s.score = 0; s.alive = true; s.started = true; s.speed = 150; s.tick = 0; s.trail = [];
+    setDisplay({score:0,alive:true,started:true});
+  }, []);
+
+  const setDir = useCallback((dx,dy) => {
+    const s = stateRef.current;
+    if(!s.alive||!s.started) return;
+    if(dx===1&&s.dir.x===-1) return; if(dx===-1&&s.dir.x===1) return;
+    if(dy===1&&s.dir.y===-1) return; if(dy===-1&&s.dir.y===1) return;
+    s.nextDir = {x:dx,y:dy};
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.key)) e.preventDefault();
+      if(e.key==="ArrowUp") setDir(0,-1);
+      if(e.key==="ArrowDown") setDir(0,1);
+      if(e.key==="ArrowLeft") setDir(-1,0);
+      if(e.key==="ArrowRight") setDir(1,0);
+      if(e.key==="Enter"||e.key==" ") reset();
+    };
+    window.addEventListener("keydown",onKey);
+    return ()=>window.removeEventListener("keydown",onKey);
+  }, [setDir, reset]);
+
+  useEffect(() => {
+    const cv = canvasRef.current;
+    const onTouchStart = (e) => { touchRef.current = {x:e.touches[0].clientX,y:e.touches[0].clientY}; };
+    const onTouchEnd = (e) => {
+      if(!touchRef.current) return;
+      const dx = e.changedTouches[0].clientX - touchRef.current.x;
+      const dy = e.changedTouches[0].clientY - touchRef.current.y;
+      if(Math.abs(dx)<10&&Math.abs(dy)<10) { reset(); return; }
+      if(Math.abs(dx)>Math.abs(dy)) setDir(dx>0?1:-1,0);
+      else setDir(0,dy>0?1:-1);
+    };
+    cv.addEventListener("touchstart",onTouchStart,{passive:true});
+    cv.addEventListener("touchend",onTouchEnd,{passive:true});
+    return ()=>{ cv.removeEventListener("touchstart",onTouchStart); cv.removeEventListener("touchend",onTouchEnd); };
+  }, [setDir, reset]);
+
+  useEffect(() => {
+    const ctx = canvasRef.current.getContext("2d");
+    const loop = (ts) => {
+      animRef.current = requestAnimationFrame(loop);
+      const s = stateRef.current;
+      ctx.fillStyle = "rgba(0,0,0,0.85)";
+      ctx.fillRect(0,0,W,H);
+      ctx.strokeStyle = "rgba(0,255,150,0.04)";
+      ctx.lineWidth = 0.5;
+      for(let i=0;i<COLS;i++){ctx.beginPath();ctx.moveTo(i*CELL,0);ctx.lineTo(i*CELL,H);ctx.stroke();}
+      for(let j=0;j<ROWS;j++){ctx.beginPath();ctx.moveTo(0,j*CELL);ctx.lineTo(W,j*CELL);ctx.stroke();}
+      const pulse = (Math.sin(ts*0.005)+1)/2;
+      ctx.save(); ctx.shadowColor="#ff2244"; ctx.shadowBlur=10+pulse*12;
+      ctx.fillStyle=`rgba(255,${30+pulse*80},60,${0.8+pulse*0.2})`;
+      ctx.beginPath(); ctx.arc(s.food.x*CELL+CELL/2,s.food.y*CELL+CELL/2,CELL/2-2,0,Math.PI*2); ctx.fill(); ctx.restore();
+      s.particles = s.particles.filter(p=>p.life>0);
+      s.particles.forEach(p=>{
+        p.x+=p.vx; p.y+=p.vy; p.life-=2; p.vy+=0.1;
+        ctx.save(); ctx.globalAlpha=p.life/100; ctx.shadowColor=p.color; ctx.shadowBlur=8;
+        ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); ctx.restore();
+      });
+      s.snake.forEach((seg,i)=>{
+        const alpha = 1-i/(s.snake.length+5);
+        const green = Math.floor(200+55*alpha);
+        ctx.save(); ctx.shadowColor=`rgb(0,${green},100)`; ctx.shadowBlur=i===0?20:10;
+        ctx.fillStyle=`rgba(0,${green},${80+alpha*80},${alpha})`;
+        const pad=i===0?1:2;
+        ctx.fillRect(seg.x*CELL+pad,seg.y*CELL+pad,CELL-pad*2,CELL-pad*2); ctx.restore();
+      });
+      if(s.started && s.alive && ts-lastTickRef.current>s.speed){
+        lastTickRef.current=ts; s.dir=s.nextDir;
+        const head={x:s.snake[0].x+s.dir.x, y:s.snake[0].y+s.dir.y};
+        if(head.x<0||head.x>=COLS||head.y<0||head.y>=ROWS||s.snake.some(seg=>seg.x===head.x&&seg.y===head.y)){
+          s.alive=false; setDisplay(d=>({...d,alive:false})); return;
+        }
+        s.snake.unshift(head);
+        if(head.x===s.food.x&&head.y===s.food.y){
+          s.score+=10; s.speed=Math.max(60,s.speed-2);
+          for(let i=0;i<20;i++) s.particles.push({x:head.x*CELL+CELL/2,y:head.y*CELL+CELL/2,vx:(Math.random()-0.5)*4,vy:(Math.random()-0.5)*4-2,life:80+Math.random()*40,r:2+Math.random()*3,color:Math.random()>0.5?"#ff3366":"#00ffaa"});
+          s.food=randFood(s.snake); setDisplay(d=>({...d,score:s.score}));
+        } else s.snake.pop();
+      }
+    };
+    animRef.current = requestAnimationFrame(loop);
+    return ()=>cancelAnimationFrame(animRef.current);
+  }, []);
+
+  return (
+    <div style={{background:"#000",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",fontFamily:"'Courier New',monospace"}}>
+      <div style={{color:"#00ffaa",fontSize:"clamp(14px,3vw,22px)",marginBottom:8,textShadow:"0 0 10px #00ffaa",letterSpacing:4}}>SCORE: {display.score}</div>
+      <div style={{position:"relative"}}>
+        <canvas ref={canvasRef} width={W} height={H} style={{border:"1px solid #00ffaa",boxShadow:"0 0 30px #00ffaa44,0 0 60px #00ffaa22",display:"block",maxWidth:"95vw",maxHeight:"80vw"}} />
+        {(!display.started||!display.alive) && (
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.75)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+            {!display.alive&&<div style={{color:"#ff2244",fontSize:"clamp(20px,5vw,36px)",textShadow:"0 0 20px #ff2244",marginBottom:16,letterSpacing:4}}>GAME OVER</div>}
+            <div style={{color:"#00ffaa",fontSize:"clamp(14px,3vw,20px)",textShadow:"0 0 10px #00ffaa",letterSpacing:3,cursor:"pointer"}} onClick={reset}>{display.started?"RESTART":"START"}</div>
+            <div style={{color:"#006644",fontSize:"clamp(10px,2vw,13px)",marginTop:12,letterSpacing:2}}>ARROWS / SWIPE</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  </script>
+</body></html>
