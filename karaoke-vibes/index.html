@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>KaraokeVibes</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>*{margin:0;padding:0;box-sizing:border-box}body{background:#080c10}</style>
+</head><body>
+  <div id="root"></div>
+  <script type="text/babel">
+import { useState, useEffect, useRef } from "react";
+
+const songs = [
+  {
+    title: "Flowers",
+    artist: "Miley Cyrus",
+    bpm: 118,
+    color: "#ff6eb4",
+    lyrics: [
+      { word: "I", time: 0.5 }, { word: "can", time: 0.9 }, { word: "buy", time: 1.3 }, { word: "myself", time: 1.7 }, { word: "flowers", time: 2.3 },
+      { word: "Write", time: 3.2 }, { word: "my", time: 3.6 }, { word: "name", time: 4.0 }, { word: "in", time: 4.4 }, { word: "the", time: 4.7 }, { word: "sand", time: 5.1 },
+      { word: "Talk", time: 6.0 }, { word: "to", time: 6.4 }, { word: "myself", time: 6.8 }, { word: "for", time: 7.4 }, { word: "hours", time: 7.9 },
+      { word: "Say", time: 8.8 }, { word: "things", time: 9.2 }, { word: "you", time: 9.6 }, { word: "don't", time: 9.9 }, { word: "understand", time: 10.3 },
+      { word: "I", time: 11.5 }, { word: "can", time: 11.9 }, { word: "love", time: 12.3 }, { word: "me", time: 12.7 }, { word: "better", time: 13.2 },
+      { word: "than", time: 13.8 }, { word: "you", time: 14.2 }, { word: "ever", time: 14.6 }, { word: "did", time: 15.1 }
+    ]
+  },
+  {
+    title: "Cruel Summer",
+    artist: "Taylor Swift",
+    bpm: 170,
+    color: "#a78bfa",
+    lyrics: [
+      { word: "Fever", time: 0.5 }, { word: "dream", time: 1.0 }, { word: "high", time: 1.5 }, { word: "in", time: 1.9 }, { word: "the", time: 2.2 }, { word: "quiet", time: 2.6 }, { word: "of", time: 3.1 }, { word: "the", time: 3.4 }, { word: "night", time: 3.8 },
+      { word: "You", time: 5.0 }, { word: "know", time: 5.4 }, { word: "that", time: 5.8 }, { word: "I", time: 6.1 }, { word: "caught", time: 6.5 }, { word: "it", time: 7.0 },
+      { word: "Bad", time: 8.0 }, { word: "bad", time: 8.5 }, { word: "boy", time: 9.0 }, { word: "shiny", time: 9.6 }, { word: "toy", time: 10.2 },
+      { word: "with", time: 11.0 }, { word: "a", time: 11.3 }, { word: "pretty", time: 11.7 }, { word: "face", time: 12.3 },
+      { word: "And", time: 13.2 }, { word: "it's", time: 13.6 }, { word: "a", time: 14.0 }, { word: "cruel", time: 14.4 }, { word: "summer", time: 15.0 }
+    ]
+  },
+  {
+    title: "Espresso",
+    artist: "Sabrina Carpenter",
+    bpm: 104,
+    color: "#fb923c",
+    lyrics: [
+      { word: "Move", time: 0.5 }, { word: "to", time: 0.9 }, { word: "Miami", time: 1.3 }, { word: "and", time: 2.0 }, { word: "I'm", time: 2.4 }, { word: "just", time: 2.8 }, { word: "vibing", time: 3.2 },
+      { word: "Got", time: 4.5 }, { word: "the", time: 4.9 }, { word: "boys", time: 5.3 }, { word: "in", time: 5.8 }, { word: "a", time: 6.1 }, { word: "frenzy", time: 6.5 },
+      { word: "None", time: 7.8 }, { word: "of", time: 8.2 }, { word: "them", time: 8.6 }, { word: "deserve", time: 9.0 }, { word: "me", time: 9.7 },
+      { word: "That's", time: 11.0 }, { word: "that", time: 11.4 }, { word: "me", time: 11.8 }, { word: "espresso", time: 12.3 }
+    ]
+  }
+];
+
+export default function App() {
+  const [current, setCurrent] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [time, setTime] = useState(0);
+  const [activeIdx, setActiveIdx] = useState(-1);
+  const interval = useRef(null);
+  const lyricsRef = useRef(null);
+  const song = songs[current];
+
+  useEffect(() => {
+    setPlaying(false); setTime(0); setActiveIdx(-1);
+  }, [current]);
+
+  useEffect(() => {
+    if (playing) {
+      interval.current = setInterval(() => {
+        setTime(t => {
+          const next = parseFloat((t + 0.1).toFixed(1));
+          const idx = song.lyrics.reduce((acc, w, i) => w.time <= next ? i : acc, -1);
+          setActiveIdx(idx);
+          if (next > song.lyrics[song.lyrics.length - 1].time + 2) { setPlaying(false); return 0; }
+          return next;
+        });
+      }, 100);
+    } else clearInterval(interval.current);
+    return () => clearInterval(interval.current);
+  }, [playing, current]);
+
+  useEffect(() => {
+    if (activeIdx >= 0 && lyricsRef.current) {
+      const el = lyricsRef.current.querySelector(`[data-idx="${activeIdx}"]`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [activeIdx]);
+
+  return (
+    <div style={{ minHeight: "100vh", background: "#0a0a0f", color: "#fff", fontFamily: "'Segoe UI', sans-serif", display: "flex", flexDirection: "column", alignItems: "center", padding: "20px" }}>
+      <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: 3, background: `linear-gradient(90deg, ${song.color}, #fff)`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", marginBottom: 16 }}>🎤 KaraokeVibes</div>
+      <div style={{ display: "flex", gap: 10, marginBottom: 24, flexWrap: "wrap", justifyContent: "center" }}>
+        {songs.map((s, i) => (
+          <button key={i} onClick={() => setCurrent(i)} style={{ padding: "8px 18px", borderRadius: 20, border: `2px solid ${i === current ? s.color : "#333"}", background: i === current ? s.color + "33" : "#111", color: i === current ? s.color : "#aaa", fontWeight: 700, cursor: "pointer", fontSize: 13, transition: "all 0.2s" }}>
+            {s.title} <span style={{ fontSize: 11, opacity: 0.7 }}>— {s.artist}</span>
+          </button>
+        ))}
+      </div>
+      <div style={{ width: "100%", maxWidth: 600, background: "#111", borderRadius: 24, padding: "24px", boxShadow: `0 0 40px ${song.color}44`, border: `1px solid ${song.color}33` }}>
+        <div style={{ textAlign: "center", marginBottom: 8 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: song.color }}>{song.title}</div>
+          <div style={{ fontSize: 14, color: "#888" }}>{song.artist}</div>
+        </div>
+        <div ref={lyricsRef} style={{ height: 220, overflowY: "hidden", padding: "20px 10px", display: "flex", flexWrap: "wrap", gap: "10px", alignContent: "flex-start", justifyContent: "center", position: "relative" }}>
+          {song.lyrics.map((w, i) => (
+            <span key={i} data-idx={i} style={{ fontSize: i === activeIdx ? 28 : 20, fontWeight: i === activeIdx ? 900 : 500, color: i === activeIdx ? song.color : i < activeIdx ? "#555" : "#ddd", textShadow: i === activeIdx ? `0 0 20px ${song.color}` : "none", transition: "all 0.2s", transform: i === activeIdx ? "scale(1.2)" : "scale(1)", display: "inline-block", padding: "2px 4px", borderRadius: 6, background: i === activeIdx ? song.color + "22" : "transparent" }}>{w.word}</span>
+          ))}
+        </div>
+        <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 20 }}>
+          <button onClick={() => { setTime(0); setActiveIdx(-1); setPlaying(true); }} style={{ padding: "12px 30px", borderRadius: 50, background: song.color, color: "#000", fontWeight: 900, fontSize: 16, border: "none", cursor: "pointer", boxShadow: `0 4px 20px ${song.color}88` }}>▶ Start</button>
+          <button onClick={() => setPlaying(p => !p)} style={{ padding: "12px 24px", borderRadius: 50, background: "#222", color: song.color, fontWeight: 700, fontSize: 16, border: `2px solid ${song.color}`, cursor: "pointer" }}>{playing ? "⏸" : "▶"}</button>
+          <button onClick={() => { setPlaying(false); setTime(0); setActiveIdx(-1); }} style={{ padding: "12px 24px", borderRadius: 50, background: "#222", color: "#888", fontWeight: 700, fontSize: 16, border: "2px solid #333", cursor: "pointer" }}>⏹</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  </script>
+</body></html>
