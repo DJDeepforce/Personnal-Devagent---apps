@@ -1,4 +1,4 @@
-!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8"/>
@@ -23,23 +23,31 @@
 
 const SYSTEM_PROMPT = `You generate micro-apps as JSON. Return ONLY raw JSON, nothing else.
 
-Format: { "title": "Name", "slug": "name-slug", "description": "one line", "code": "JSX string" }
+Format: { "title": "Name", "slug": "name-slug", "description": "one line", "type": "react or vanilla", "code": "code string" }
 
-CRITICAL CODE RULES - code runs inside a <script type="text/babel"> in a plain HTML page:
-- NEVER use import or export statements
-- Use React.useState, React.useEffect, React.useRef, React.useCallback directly (no destructuring)
-- Always define exactly: function App() { ... } with no export
-- Use only inline styles (JS objects), no CSS classes, no Tailwind
-- Dark theme, beautiful UI, fully functional
-- Up to 300 lines for complex apps like games
-- For audio: use Web Audio API with React.useRef
-- For timers: use setInterval inside React.useEffect
-- For games: use requestAnimationFrame, canvas, keyboard events
-- For YouTube: use YouTube IFrame API by loading https://www.youtube.com/iframe_api in a useEffect, then create YT.Player. Example: window.onYouTubeIframeAPIReady = () => { playerRef.current = new YT.Player('yt-player', { videoId: 'VIDEO_ID', ... }) }
-- For music search: use fetch to call https://itunes.apple.com/search?term=QUERY&media=music&limit=10 (free, no key needed)
-- For track similarity: use fetch to call https://ws.audioscrobbler.com/2.0/?method=track.getsimilar&artist=ARTIST&track=TRACK&api_key=c9b3e2b9b3e2b9b3e2b9b3e2b9b3e2b9&format=json
+CHOOSE TYPE:
+- "vanilla": games (snake, tetris, pong), canvas, requestAnimationFrame, keyboard events
+- "react": UI tools, calculators, timers, music players, forms
 
-JSON "code" field rules: escape " as \" and newlines as \n. Full response must be valid JSON.`;
+RULES FOR vanilla type:
+- Pure JavaScript only, zero React/JSX
+- Runs in a plain <script> tag
+- HTML already provides: <canvas id="c" style="display:block;margin:auto;background:#000"></canvas><div id="ui" style="color:white;text-align:center;font-family:sans-serif"></div>
+- Start with: const canvas = document.getElementById('c'); const ctx = canvas.getContext('2d');
+- Use addEventListener for keyboard/mouse
+- Use requestAnimationFrame for game loop
+
+RULES FOR react type:
+- NO import, NO export statements ever
+- Use React.useState, React.useEffect, React.useRef directly
+- Define: function App() { ... } only
+- Inline styles only
+
+BOTH:
+- Dark theme, beautiful, fully functional, up to 300 lines
+- Music search: fetch('https://itunes.apple.com/search?term='+query+'&media=music&limit=10')
+
+JSON "code" field: escape all " as \" and newlines as \n. Must be valid JSON.`;
 
 const STEPS = [
   { label: "Agent 1 — Génération du code", icon: "🧠", color: "#63d39e" },
@@ -136,20 +144,19 @@ function App() {
     const base = "https://api.github.com/repos/" + cfg.githubUser + "/Personnal-Devagent---apps/contents";
     const headers = { "Authorization": "token " + cfg.githubToken, "Content-Type": "application/json" };
 
+    const isVanilla = appData.type === "vanilla";
     const html = `<!DOCTYPE html>
 <html lang="fr"><head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>${title}</title>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"><\/script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"><\/script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"><\/script>
-  <style>*{margin:0;padding:0;box-sizing:border-box}body{background:#080c10}</style>
+  ${isVanilla ? '' : '<script src="https://unpkg.com/react@18/umd/react.production.min.js"><\/script><script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"><\/script><script src="https://unpkg.com/@babel/standalone/babel.min.js"><\/script>'}
+  <style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0a0a0a;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh}</style>
 </head><body>
-  <div id="root"></div>
-  <script type="text/babel">
-${code.replace(/export\s+default\s+function\s+App/, 'function App').replace(/export\s+default\s+App/, '')}
-try { ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App)); } catch(e) { document.getElementById("root").innerHTML = "<div style=color:red;padding:20px>Erreur: " + e.message + "</div>"; }
+  ${isVanilla ? '<canvas id="c" style="display:block;margin:auto;background:#000"></canvas><div id="ui" style="color:white;text-align:center;font-family:sans-serif;padding:10px"></div>' : '<div id="root"></div>'}
+  <script ${isVanilla ? '' : 'type="text/babel"'}>
+${isVanilla ? code : code.replace(/export\s+default\s+function\s+App/, 'function App').replace(/export\s+default\s+App[^a-z]/, '')}
+${isVanilla ? '' : 'try { ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App)); } catch(e) { document.getElementById("root").innerHTML = "<div style=color:red;padding:20px>Erreur: " + e.message + "</div>"; }'}
   <\/script>
 </body></html>`;
 
