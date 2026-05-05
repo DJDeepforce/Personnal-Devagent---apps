@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="fr"><head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Project Vault</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>*{margin:0;padding:0;box-sizing:border-box}body{background:#080c10}</style>
+</head><body>
+  <div id="root"></div>
+  <script type="text/babel">
+function App() {
+  const PIN = '1234';
+  const [unlocked, setUnlocked] = React.useState(false);
+  const [pinInput, setPinInput] = React.useState('');
+  const [pinError, setPinError] = React.useState(false);
+  const [projects, setProjects] = React.useState(() => {
+    try { return JSON.parse(localStorage.getItem('vault_projects') || '[]'); } catch { return []; }
+  });
+  const [view, setView] = React.useState('list');
+  const [selected, setSelected] = React.useState(null);
+  const [showAddProject, setShowAddProject] = React.useState(false);
+  const [newProj, setNewProj] = React.useState({ name: '', status: 'en cours' });
+  const [newField, setNewField] = React.useState({ label: '', value: '' });
+  const [copied, setCopied] = React.useState(null);
+  const [editName, setEditName] = React.useState('');
+  const [editStatus, setEditStatus] = React.useState('');
+  const [editing, setEditing] = React.useState(false);
+
+  const save = (p) => { setProjects(p); localStorage.setItem('vault_projects', JSON.stringify(p)); };
+
+  const handlePin = (d) => {
+    const val = pinInput + d;
+    setPinInput(val);
+    if (val.length === 4) {
+      if (val === PIN) { setUnlocked(true); setPinError(false); }
+      else { setPinError(true); setTimeout(() => setPinInput(''), 600); }
+    }
+  };
+
+  const copyField = (val, id) => {
+    navigator.clipboard.writeText(val).then(() => { setCopied(id); setTimeout(() => setCopied(null), 1500); });
+  };
+
+  const addProject = () => {
+    if (!newProj.name.trim()) return;
+    const p = [...projects, { id: Date.now(), ...newProj, fields: [] }];
+    save(p); setShowAddProject(false); setNewProj({ name: '', status: 'en cours' });
+  };
+
+  const deleteProject = (id) => { save(projects.filter(p => p.id !== id)); setView('list'); };
+
+  const addField = () => {
+    if (!newField.label.trim()) return;
+    const p = projects.map(pr => pr.id === selected.id ? { ...pr, fields: [...pr.fields, { id: Date.now(), ...newField }] } : pr);
+    save(p); setSelected(p.find(pr => pr.id === selected.id)); setNewField({ label: '', value: '' });
+  };
+
+  const deleteField = (fid) => {
+    const p = projects.map(pr => pr.id === selected.id ? { ...pr, fields: pr.fields.filter(f => f.id !== fid) } : pr);
+    save(p); setSelected(p.find(pr => pr.id === selected.id));
+  };
+
+  const saveEdit = () => {
+    const p = projects.map(pr => pr.id === selected.id ? { ...pr, name: editName, status: editStatus } : pr);
+    save(p); setSelected(p.find(pr => pr.id === selected.id)); setEditing(false);
+  };
+
+  const statusColor = (s) => s === 'en cours' ? '#4ade80' : s === 'bloqué' ? '#f87171' : '#facc15';
+  const s = { bg: '#0f0f13', card: '#1a1a24', accent: '#7c3aed', text: '#e2e8f0', muted: '#64748b', border: '#2a2a3a' };
+
+  if (!unlocked) return React.createElement('div', { style: { background: s.bg, minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: 'system-ui' } },
+    React.createElement('div', { style: { fontSize: 40, marginBottom: 8 } }, '🔐'),
+    React.createElement('div', { style: { color: s.text, fontSize: 22, fontWeight: 700, marginBottom: 4 } }, 'Project Vault'),
+    React.createElement('div', { style: { color: s.muted, marginBottom: 32 } }, 'Entrez votre PIN'),
+    React.createElement('div', { style: { display: 'flex', gap: 12, marginBottom: 24 } },
+      [0,1,2,3].map(i => React.createElement('div', { key: i, style: { width: 16, height: 16, borderRadius: '50%', background: pinInput.length > i ? s.accent : s.border, transition: 'background 0.2s' } }))
+    ),
+    pinError && React.createElement('div', { style: { color: '#f87171', marginBottom: 12, fontSize: 14 } }, 'PIN incorrect'),
+    React.createElement('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, width: 220 } },
+      ['1','2','3','4','5','6','7','8','9','','0','⌫'].map(d => React.createElement('button', {
+        key: d, onClick: () => d === '⌫' ? setPinInput(p => p.slice(0,-1)) : d && handlePin(d),
+        style: { padding: '18px 0', borderRadius: 12, border: 'none', background: d ? s.card : 'transparent', color: s.text, fontSize: 20, fontWeight: 600, cursor: d ? 'pointer' : 'default' }
+      }, d))
+    )
+  );
+
+  if (view === 'detail' && selected) {
+    const proj = projects.find(p => p.id === selected.id) || selected;
+    return React.createElement('div', { style: { background: s.bg, minHeight: '100vh', fontFamily: 'system-ui', color: s.text, padding: '0 0 80px' } },
+      React.createElement('div', { style: { background: s.card, padding: '16px 16px 12px', display: 'flex', alignItems: 'center', gap: 12, borderBottom: `1px solid ${s.border}` } },
+        React.createElement('button', { onClick: () => setView('list'), style: { background: 'none', border: 'none', color: s.accent, fontSize: 22, cursor: 'pointer' } }, '←'),
+        editing ? React.createElement('input', { value: editName, onChange: e => setEditName(e.target.value), style: { flex: 1, background: s.bg, border: `1px solid ${s.accent}`, borderRadius: 8, padding: '4px 8px', color: s.text, fontSize: 16 } })
+          : React.createElement('div', { style: { flex: 1, fontWeight: 700, fontSize: 18 } }, proj.name),
+        editing ? React.createElement('button', { onClick: saveEdit, style: { background: s.accent, border: 'none', borderRadius: 8, color: '#fff', padding: '6px 12px', cursor: 'pointer' } }, '✓')
+          : React.createElement('button', { onClick: () => { setEditName(proj.name); setEditStatus(proj.status); setEditing(true); }, style: { background: 'none', border: 'none', color: s.muted, fontSize: 18, cursor: 'pointer' } }, '✏️')
+      ),
+      React.createElement('div', { style: { padding: '12px 16px', display: 'flex', gap: 8, alignItems: 'center' } },
+        React.createElement('div', { style: { width: 10, height: 10, borderRadius: '50%', background: statusColor(proj.status) } }),
+        editing ? React.createElement('select', { value: editStatus, onChange: e => setEditStatus(e.target.value), style: { background: s.card, border: `1px solid ${s.border}`, borderRadius: 6, color: s.text, padding: '4px 8px' } },
+          ['en cours','bloqué','en attente'].map(st => React.createElement('option', { key: st, value: st }, st)))
+          : React.createElement('span', { style: { color: statusColor(proj.status), fontSize: 14, fontWeight: 600 } }, proj.status),
+        React.createElement('button', { onClick: () => deleteProject(proj.id), style: { marginLeft: 'auto', background: '#7f1d1d', border: 'none', borderRadius: 8, color: '#fca5a5', padding: '4px 10px', cursor: 'pointer', fontSize: 12 } }, '🗑 Supprimer')
+      ),
+      React.createElement('div', { style: { padding: '0 16px' } },
+        proj.fields.map(f => React.createElement('div', { key: f.id, style: { background: s.card, borderRadius: 12, padding: '12px 14px', marginBottom: 10, border: `1px solid ${s.border}` } },
+          React.createElement('div', { style: { color: s.muted, fontSize: 12, marginBottom: 4 } }, f.label),
+          React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+            React.createElement('div', { style: { flex: 1, fontSize: 14, wordBreak: 'break-all', color: s.text } }, f.value),
+            React.createElement('button', { onClick: () => copyField(f.value, f.id), style: { background: copied === f.id ? '#166534' : s.bg, border: `1px solid ${s.border}`, borderRadius: 8, color: copied === f.id ? '#4ade80' : s.muted, padding: '4px 10px', cursor: 'pointer', fontSize: 12, whiteSpace: 'nowrap' } }, copied === f.id ? '✓ Copié' : '📋'),
+            React.createElement('button', { onClick: () => deleteField(f.id), style: { background: 'none', border: 'none', color: '#f87171', cursor: 'pointer', fontSize: 16 } }, '×')
+          )
+        )),
+        React.createElement('div', { style: { background: s.card, borderRadius: 12, padding: 14, border: `1px dashed ${s.accent}` } },
+          React.createElement('div', { style: { color: s.accent, fontWeight: 600, marginBottom: 10, fontSize: 14 } }, '+ Nouveau champ'),
+          React.createElement('input', { placeholder: 'Label (ex: GitHub, API Key...)', value: newField.label, onChange: e => setNewField(f => ({...f, label: e.target.value})), style: { width: '100%', background: s.bg, border: `1px solid ${s.border}`, borderRadius: 8, padding: '8px 10px', color: s.text, fontSize: 14, marginBottom: 8, boxSizing: 'border-box' } }),
+          React.createElement('input', { placeholder: 'Valeur', value: newField.value, onChange: e => setNewField(f => ({...f, value: e.target.value})), style: { width: '100%', background: s.bg, border: `1px solid ${s.border}`, borderRadius: 8, padding: '8px 10px', color: s.text, fontSize: 14, marginBottom: 10, boxSizing: 'border-box' } }),
+          React.createElement('button', { onClick: addField, style: { width: '100%', background: s.accent, border: 'none', borderRadius: 10, color: '#fff', padding: '10px', cursor: 'pointer', fontWeight: 600 } }, 'Ajouter le champ')
+        )
+      )
+    );
+  }
+
+  return React.createElement('div', { style: { background: s.bg, minHeight: '100vh', fontFamily: 'system-ui', color: s.text } },
+    React.createElement('div', { style: { background: s.card, padding: '18px 16px 14px', borderBottom: `1px solid ${s.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+      React.createElement('div', { style: { fontWeight: 700, fontSize: 20 } }, '🔐 Project Vault'),
+      React.createElement('button', { onClick: () => setShowAddProject(true), style: { background: s.accent, border: 'none', borderRadius: 10, color: '#fff', padding: '8px 16px', fontWeight: 600, cursor: 'pointer' } }, '+ Projet')
+    ),
+    showAddProject && React.createElement('div', { style: { margin: 16, background: s.card, borderRadius: 14, padding: 16, border: `1px solid ${s.accent}` } },
+      React.createElement('div', { style: { fontWeight: 600, marginBottom: 12, color: s.accent } }, 'Nouveau projet'),
+      React.createElement('input', { placeholder: 'Nom du projet', value: newProj.name, onChange: e => setNewProj(p => ({...p, name: e.target.value})), style: { width: '100%', background: s.bg, border: `1px solid ${s.border}`, borderRadius: 8, padding: '10px', color: s.text, fontSize: 15, marginBottom: 10, boxSizing: 'border-box' } }),
+      React.createElement('select', { value: newProj.status, onChange: e => setNewProj(p => ({...p, status: e.target.value})), style: { width: '100%', background: s.bg, border: `1px solid ${s.border}`, borderRadius: 8, padding: '10px', color: s.text, fontSize: 15, marginBottom: 12 } },
+        ['en cours','bloqué','en attente'].map(st => React.createElement('option', { key: st, value: st }, st))
+      ),
+      React.createElement('div', { style: { display: 'flex', gap: 10 } },
+        React.createElement('button', { onClick: () => setShowAddProject(false), style: { flex: 1, background: s.border, border: 'none', borderRadius: 10, color: s.text, padding: 10, cursor: 'pointer' } }, 'Annuler'),
+        React.createElement('button', { onClick: addProject, style: { flex: 1, background: s.accent, border: 'none', borderRadius: 10, color: '#fff', padding: 10, fontWeight: 600, cursor: 'pointer' } }, 'Créer')
+      )
+    ),
+    React.createElement('div', { style: { padding: '12px 16px' } },
+      projects.length === 0 && React.createElement('div', { style: { textAlign: 'center', color: s.muted, marginTop: 60, fontSize: 16 } }, 'Aucun projet. Créez-en un !'),
+      projects.map(p => React.createElement('div', { key: p.id, onClick: () => { setSelected(p); setView('detail'); setEditing(false); }, style: { background: s.card, borderRadius: 14, padding: '14px 16px', marginBottom: 12, border: `1px solid ${s.border}`, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+        React.createElement('div', null,
+          React.createElement('div', { style: { fontWeight: 600, fontSize: 16, marginBottom: 6 } }, p.name),
+          React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 6 } },
+            React.createElement('div', { style: { width: 8, height: 8, borderRadius: '50%', background: statusColor(p.status) } }),
+            React.createElement('span', { style: { color: statusColor(p.status), fontSize: 13 } }, p.status)
+          )
+        ),
+        React.createElement('div', { style: { color: s.muted, fontSize: 13 } }, `${p.fields.length} champ${p.fields.length !== 1 ? 's' : ''} →`)
+      ))
+    )
+  );
+}
+try { ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App)); } catch(e) { document.getElementById("root").innerHTML = "<div style=color:red;padding:20px>Erreur: " + e.message + "</div>"; }
+  </script>
+</body></html>
